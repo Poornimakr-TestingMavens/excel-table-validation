@@ -1,43 +1,81 @@
-name: Playwright Tests
+name: Playwright Tests with Allure
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chromium, firefox, webkit, 'Microsoft Edge']
 
     steps:
-      # Checkout repo
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
-      # Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Install browsers required for Playwright
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline --save-dev
 
-      # Run tests
-      - name: Run Playwright tests
-        run: npx playwright test
+      - name: Run Playwright Tests
+        run: |
+          npx playwright install
+          npx playwright test --project=${{ matrix.browser }} --reporter=list,allure-playwright
 
-      # Upload Playwright report as artifact (HTML report)
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Generate Allure HTML Report
+        run: |
+          mkdir -p .artifacts/allure-report/${{ matrix.browser }}
+          allure generate .artifacts/allure-results/${{ matrix.browser }} --clean -o .artifacts/allure-report/${{ matrix.browser }}
+
+      - name: Upload Allure Results per Browser
+        uses: actions/upload-artifact@v3
         with:
-          name: playwright-report
-          path: playwright-report
-          retention-days: 7
+          name: allure-report-${{ matrix.browser }}
+          path: .artifacts/allure-report/${{ matrix.browser }}
+
+  select-best-report:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Download all reports
+        uses: actions/download-artifact@v3
+        with:
+          name: '*'
+          path: ./reports
+
+      - name: Compare Success Rates
+        id: compare
+        run: |
+          best=""
+          bestRate=0
+          for dir in reports/*; do
+            if [ -f "$dir/widgets/summary.json" ]; then
+              total=$(jq '.stats.total' $dir/widgets/summary.json)
+              passed=$(jq '.stats.passed' $dir/widgets/summary.json)
+              rate=$((passed * 100 / total))
+              echo "$dir success rate: $rate%"
+              if [ $rate -gt $bestRate ]; then
+                bestRate=$rate
+                best=$dir
+              fi
+            fi
+          done
+          echo "Best browser report: $best with rate $bestRate%"
+          echo "best_report=$best" >> $GITHUB_ENV
+
+      - name: Upload Best Browser Allure Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: best-allure-report
+          path: ${{ env.best_report }}

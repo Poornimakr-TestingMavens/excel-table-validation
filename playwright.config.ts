@@ -1,5 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
+import fs from 'fs';
 
+const artifactsDir = path.resolve(process.cwd(), '.artifacts');
+const allureResultsDir = path.join(artifactsDir, 'allure-results');
+const allureReportDir = path.join(artifactsDir, 'allure-report');
+// Ensure folders exist
+[artifactsDir, allureResultsDir, allureReportDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -22,9 +33,14 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+ reporter: [
+    ['html', { outputFolder: path.join(artifactsDir, 'html-report'), open: 'never' }],
+    ['allure-playwright', { outputFolder: allureResultsDir }]
+  ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
+    baseURL: 'https://cosmocode.io/automation-practice-webtable/', 
+    headless: true,
     /* Base URL to use in actions like `await page.goto('/')`. */
     // baseURL: 'http://localhost:3000',
 
@@ -60,10 +76,10 @@ export default defineConfig({
     // },
 
     /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
+    {
+      name: 'Microsoft Edge',
+      use: { ...devices['Desktop Edge'], channel: 'msedge' },
+    },
     // {
     //   name: 'Google Chrome',
     //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
